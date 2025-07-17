@@ -14,6 +14,7 @@ export default {
             file: 'dist/index.cjs.js',
             format: 'cjs',
             sourcemap: true,
+            exports: 'named',
         },
         {
             file: 'dist/index.umd.js',
@@ -21,10 +22,17 @@ export default {
             name: 'MxBankTransactionParser',
             sourcemap: true,
             plugins: [terser()],
+            globals: {},
         },
     ],
     plugins: [
-        resolve(),
-        commonjs(),
+        resolve({
+            browser: true,
+            preferBuiltins: false,
+        }),
+        commonjs({
+            include: /node_modules/,
+        }),
     ],
+    external: [],
 };
