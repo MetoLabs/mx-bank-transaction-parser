@@ -6,17 +6,17 @@ export default {
     input: 'src/index.js',
     output: [
         {
-            file: 'dist/mx-bank-transaction-parser.esm.js',
+            file: 'dist/index.esm.js',
             format: 'esm',
             sourcemap: true,
         },
         {
-            file: 'dist/mx-bank-transaction-parser.cjs.js',
+            file: 'dist/index.cjs.js',
             format: 'cjs',
             sourcemap: true,
         },
         {
-            file: 'dist/mx-bank-transaction-parser.umd.js',
+            file: 'dist/index.umd.js',
             format: 'umd',
             name: 'MxBankTransactionParser',
             sourcemap: true,
