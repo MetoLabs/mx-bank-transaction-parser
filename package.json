@@ -30,7 +30,7 @@
   "license": "MIT",
   "private": false,
   "dependencies": {
-    "csv-parse": "^6.1.0",
+    "papaparse": "^5.5.3",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {

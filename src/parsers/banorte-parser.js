@@ -1,4 +1,4 @@
-import { parse } from 'csv-parse/sync';
+import Papa from 'papaparse';
 import { Transaction } from '../models/transaction.js';
 
 export class BanorteParser {
@@ -9,15 +9,15 @@ export class BanorteParser {
      * @returns {Transaction[]} Array of parsed Transaction objects.
      */
     parse(fileContent) {
-        const records = parse(fileContent, {
+        const { data } = Papa.parse(fileContent, {
             delimiter: '|',
-            columns: true,
-            skip_empty_lines: true,
-            trim: true,
-            relax_column_count: true,
+            header: true,
+            skipEmptyLines: true,
+            transformHeader: header => header.trim(),
+            transform: value => value.trim(),
         });
 
-        return records
+        return data
             .map(record => this.parseRecord(record))
             .filter(Boolean);
     }
