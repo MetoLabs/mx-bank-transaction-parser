@@ -13,6 +13,7 @@ export class Transaction {
      * @param {string} params.description - Description or concept of transaction
      * @param {string} params.reference - Reference or tracking number
      * @param {string} params.bank - Bank involved in transaction
+     * @param {string|null} [params.accountNumber] - Origin/destination account number, if any
      * @param {string|null} [params.beneficiary] - Beneficiary of the transaction, if any
      * @param {string|null} [params.trackingKey] - Internal tracking key, if any
      * @param {string} [params.extra] - Raw original line or extra info
@@ -25,6 +26,7 @@ export class Transaction {
                     description,
                     reference,
                     bank,
+                    accountNumber = null,
                     beneficiary = null,
                     trackingKey = null,
                     extra = '',
@@ -36,6 +38,7 @@ export class Transaction {
         this.description = description;
         this.reference = reference;
         this.bank = bank;
+        this.accountNumber = accountNumber;
         this.beneficiary = beneficiary;
         this.trackingKey = trackingKey;
         this.extra = extra;
