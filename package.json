@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "JavaScript library for parsing transaction files from Mexican banks (TXT, CSV, XLSX).",
   "main": "dist/index.cjs.js",
-  "module": "dist/index.esm.js",
+  "module": "dist/index.esm.mjs",
   "browser": "dist/index.umd.js",
   "type": "module",
   "scripts": {
