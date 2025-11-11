@@ -78,7 +78,11 @@ export class BbvaParser {
             reference: this._extractReference(record.description),
             accountNumber: '',
             description: record.description.trim(),
-            bank: 'BBVA',
+            bank: {
+                id: '012',
+                code: '40012',
+                name: 'BBVA MEXICO',
+            },
             raw: JSON.stringify(record),
         });
     }

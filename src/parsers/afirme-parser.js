@@ -81,7 +81,11 @@ export class AfirmeParser {
             reference: record.reference || '',
             accountNumber: record.account || '',
             description: record.description.trim(),
-            bank: 'AFIRME',
+            bank: {
+                id: '062',
+                code: '40062',
+                name: 'AFIRME',
+            },
             raw: JSON.stringify(record),
         });
     }

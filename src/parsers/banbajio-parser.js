@@ -112,7 +112,11 @@ export class BanBajioParser {
             reference: this._extractReference(record.description),
             accountNumber: accountNumber,
             description: record.description.trim(),
-            bank: 'BANBAJIO',
+            bank: {
+                id: '030',
+                code: '40030',
+                name: 'BAJIO',
+            },
             raw: JSON.stringify(record),
         });
     }

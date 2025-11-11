@@ -129,7 +129,11 @@ export class BanregioParser {
             reference: record.reference || '',
             accountNumber: accountNumber,
             description: record.description.trim(),
-            bank: 'BANREGIO',
+            bank: {
+                id: '058',
+                code: '40058',
+                name: 'BANREGIO',
+            },
             raw: JSON.stringify(record),
         });
     }

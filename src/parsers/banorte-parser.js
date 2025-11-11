@@ -91,7 +91,11 @@ export class BanorteParser {
             reference: record.reference || '',
             accountNumber: record.account || '',
             description: record.description.trim(),
-            bank: 'BANORTE',
+            bank: {
+                id: '072',
+                code: '40072',
+                name: 'BANORTE',
+            },
             raw: JSON.stringify(record),
         });
     }

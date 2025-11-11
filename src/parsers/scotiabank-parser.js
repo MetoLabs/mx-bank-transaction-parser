@@ -54,7 +54,11 @@ export class ScotiabankParser {
                 reference: segments.reference.trim(),
                 account: segments.accountNumber.trim(),
                 description: descriptionInfo.description,
-                bank: 'SCOTIABANK',
+                bank: {
+                    id: '044',
+                    code: '40044',
+                    name: 'SCOTIABANK',
+                },
                 raw: JSON.stringify({ segments, descriptionInfo }),
             });
         } catch (error) {
