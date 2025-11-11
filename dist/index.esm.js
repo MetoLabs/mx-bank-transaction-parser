@@ -3888,7 +3888,11 @@ class AfirmeParser {
             reference: record.reference || '',
             accountNumber: record.account || '',
             description: record.description.trim(),
-            bank: 'AFIRME',
+            bank: {
+                id: '062',
+                code: '40062',
+                name: 'AFIRME',
+            },
             raw: JSON.stringify(record),
         });
     }
@@ -4029,7 +4033,11 @@ class BanBajioParser {
             reference: this._extractReference(record.description),
             accountNumber: accountNumber,
             description: record.description.trim(),
-            bank: 'BANBAJIO',
+            bank: {
+                id: '030',
+                code: '40030',
+                name: 'BAJIO',
+            },
             raw: JSON.stringify(record),
         });
     }
@@ -4224,7 +4232,11 @@ class BanregioParser {
             reference: record.reference || '',
             accountNumber: accountNumber,
             description: record.description.trim(),
-            bank: 'BANREGIO',
+            bank: {
+                id: '058',
+                code: '40058',
+                name: 'BANREGIO',
+            },
             raw: JSON.stringify(record),
         });
     }
@@ -4344,7 +4356,11 @@ class BanorteParser {
             reference: record.reference || '',
             accountNumber: record.account || '',
             description: record.description.trim(),
-            bank: 'BANORTE',
+            bank: {
+                id: '072',
+                code: '40072',
+                name: 'BANORTE',
+            },
             raw: JSON.stringify(record),
         });
     }
@@ -4450,7 +4466,11 @@ class BbvaParser {
             reference: this._extractReference(record.description),
             accountNumber: '',
             description: record.description.trim(),
-            bank: 'BBVA',
+            bank: {
+                id: '012',
+                code: '40012',
+                name: 'BBVA MEXICO',
+            },
             raw: JSON.stringify(record),
         });
     }
@@ -4544,7 +4564,11 @@ class ScotiabankParser {
                 reference: segments.reference.trim(),
                 account: segments.accountNumber.trim(),
                 description: descriptionInfo.description,
-                bank: 'SCOTIABANK',
+                bank: {
+                    id: '044',
+                    code: '40044',
+                    name: 'SCOTIABANK',
+                },
                 raw: JSON.stringify({ segments, descriptionInfo }),
             });
         } catch (error) {
