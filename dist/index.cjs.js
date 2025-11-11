@@ -4564,7 +4564,7 @@ class ScotiabankParser {
                 amount: type === 'credit' ? amount : -amount,
                 balance,
                 reference: segments.reference.trim(),
-                account: segments.accountNumber.trim(),
+                accountNumber: segments.accountNumber.trim().replace(/^0+/g, '') || null,
                 description: descriptionInfo.description,
                 bank: {
                     id: '044',
