@@ -3922,127 +3922,179 @@ class AfirmeParser {
 
 class BanBajioParser {
     /**
-     * Parses the entire BanBajio CSV file content.
+     * Parses BanBajio CSV content with English headers
      *
-     * @param {string} fileContent - Full CSV content as string.
-     * @returns {Transaction[]} Array of transactions.
+     * @param {string} fileContent
+     * @returns {Transaction[]}
      */
     parse(fileContent) {
-        const lines = fileContent
-            .split(/\r?\n/)
-            .map(line => line.trim())
-            .filter(line => line.length > 0);
+        try {
+            const lines = fileContent.split(/\r?\n/).map(line => line.trim());
 
-        // Skip the first two lines (metadata + headers)
-        const dataLines = lines.slice(2);
+            const accountInfo = this._extractAccountInfo(lines[0]);
+            const accountNumber = accountInfo.accountNumber || '';
 
-        return dataLines
-            .map(line => this.parseRow(line))
-            .filter(Boolean);
+            let dataStartIndex = -1;
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].startsWith('#,Fecha Movimiento,Hora,Recibo,Descripción,Cargos,Abonos,Saldo')) {
+                    dataStartIndex = i + 1;
+                    break;
+                }
+            }
+
+            if (dataStartIndex === -1) {
+                console.error('Could not find transaction data in BanBajio file');
+                return [];
+            }
+
+            const transactionLines = lines.slice(dataStartIndex).filter(line => {
+                return line &&
+                    line.includes(',') &&
+                    !isNaN(parseInt(line.split(',')[0]));
+            });
+
+            const transactionData = transactionLines.join('\n');
+
+            const records = parse(transactionData, {
+                delimiter: ',',
+                columns: ['sequence', 'date', 'time', 'receipt', 'description', 'debit', 'credit', 'balance'],
+                skip_empty_lines: true,
+                trim: true,
+                relax_column_count: true,
+                cast: (value, context) => {
+                    if (context.column === 'debit' || context.column === 'credit' || context.column === 'balance') {
+                        return this._parseNumber(value);
+                    }
+                    if (context.column === 'sequence') {
+                        return parseInt(value) || 0;
+                    }
+                    return value;
+                }
+            });
+
+            return records
+                .map(record => this.parseRow(record, accountNumber))
+                .filter(Boolean);
+        } catch (error) {
+            console.error('Error parsing BanBajio file:', error);
+            return [];
+        }
     }
 
     /**
-     * Parses a single CSV line of BanBajio transaction.
+     * Extracts account information from first line
      *
-     * @param {string} row - CSV line string.
+     * @param {string} firstLine
+     * @returns {Object}
+     */
+    _extractAccountInfo(firstLine) {
+        const accountInfo = {
+            accountName: '',
+            accountNumber: '',
+            bank: 'BANBAJIO'
+        };
+
+        if (!firstLine) return accountInfo;
+
+        const parts = firstLine.split(',');
+        if (parts.length >= 2) {
+            accountInfo.accountName = parts[0]?.trim() || '';
+            accountInfo.accountNumber = parts[1]?.trim() || '';
+        }
+
+        return accountInfo;
+    }
+
+    /**
+     * Parses a single transaction record with English headers
+     *
+     * @param {Object} record
+     * @param {string} accountNumber
      * @returns {Transaction|null}
      */
-    parseRow(row) {
-        // Split by comma, but beware description may contain commas or pipes.
-        // Let's split into exactly 8 fields by limit split:
-        // Index, Date, Time, Receipt, Description, Charges, Credits, Balance
+    parseRow(record, accountNumber) {
+        if (!record.date || !record.description) {
+            return null;
+        }
 
-        // A naive split on comma might break Description if it contains commas.
-        // But from sample, the first 4 fields are fixed-length,
-        // So we can split first 5 commas to get 6 fields, then last 2 fields.
-
-        const parts = this._splitCsvWithLimit(line, 7);
-        if (parts.length < 8) return null;
-
-        const [
-            index,
-            dateStr,
-            timeStr,
-            receipt,
-            description,
-            chargesStr,
-            creditsStr,
-            balanceStr,
-        ] = parts;
-
-        const date = this._formatDateTime(dateStr, timeStr);
-        const charges = this._parseMoney(chargesStr);
-        const credits = this._parseMoney(creditsStr);
-        const balance = this._parseMoney(balanceStr);
-        const amount = credits !== 0 ? credits : -charges;
+        const date = this._formatDate(record.date);
+        const debit = record.debit || 0;
+        const credit = record.credit || 0;
+        const balance = record.balance || 0;
+        const amount = credit !== 0 ? credit : -debit;
 
         return new Transaction({
             date,
-            type: credits !== 0 ? 'credit' : 'debit',
+            type: credit !== 0 ? 'credit' : 'debit',
             amount,
             balance,
-            reference: receipt,
-            accountNumber: null,
-            description,
-            bank: 'BanBajio',
-            raw: line,
+            reference: this._extractReference(record.description),
+            accountNumber: accountNumber,
+            description: record.description.trim(),
+            bank: 'BANBAJIO',
+            raw: JSON.stringify(record),
         });
     }
 
     /**
-     * Splits a CSV line string into parts with a maximum number of splits,
-     * so description with commas won't break field alignment.
+     * Extracts reference from description
      *
-     * @param {string} line
-     * @param {number} limit - Max splits (max fields - 1)
-     * @returns {string[]}
+     * @param {string} description
+     * @returns {string}
      */
-    _splitCsvWithLimit(line, limit) {
-        const parts = [];
-        let lastIndex = 0;
-        let count = 0;
-
-        for (let i = 0; i < line.length; i++) {
-            if (line[i] === ',' && count < limit) {
-                parts.push(line.substring(lastIndex, i));
-                lastIndex = i + 1;
-                count++;
-            }
+    _extractReference(description) {
+        const referenceMatch = description.match(/Referencia:\s*([^|]+)/);
+        if (referenceMatch) {
+            return referenceMatch[1].trim();
         }
-        parts.push(line.substring(lastIndex));
-        return parts;
+
+        const trackingMatch = description.match(/Clave de Rastreo:\s*(\S+)/);
+        if (trackingMatch) {
+            return trackingMatch[1].trim();
+        }
+
+        const receiptMatch = description.match(/Recibo #\s*(\d+)/);
+        if (receiptMatch) {
+            return receiptMatch[1].trim();
+        }
+
+        return '';
     }
 
     /**
-     * Parses money strings like "58928.00" into number.
+     * Parses number with commas as thousands separator
      *
      * @param {string} str
      * @returns {number}
      */
-    _parseMoney(str) {
-        if (!str) return 0;
-        // Remove commas and parse float
-        return parseFloat(str.replace(/,/g, '')) || 0;
+    _parseNumber(str) {
+        if (!str || str.trim() === '') return 0;
+        const cleanStr = str.replace(/,/g, '').trim();
+        return parseFloat(cleanStr) || 0;
     }
 
     /**
-     * Converts date and time strings into ISO 8601 date-time string.
+     * Converts DD-MMM-YYYY to YYYY-MM-DD
      *
-     * @param {string} dateStr - e.g. "28-Nov-2024"
-     * @param {string} timeStr - e.g. "09:33:24"
-     * @returns {string} ISO date-time string "YYYY-MM-DDTHH:mm:ss"
+     * @param {string} input
+     * @returns {string}
      */
-    _formatDateTime(dateStr, timeStr) {
-        // Convert DD-MMM-YYYY (like 28-Nov-2024) to YYYY-MM-DD
+    _formatDate(input) {
         const months = {
-            Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
-            Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12',
+            'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
+            'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
+            'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
         };
-        const [day, mon, year] = dateStr.split('-');
-        const monthNum = months[mon] || '01';
 
-        // Combine into ISO 8601
-        return `${year}-${monthNum}-${day.padStart(2, '0')}T${timeStr}`;
+        const parts = input.split('-');
+        if (parts.length === 3) {
+            const day = parts[0].padStart(2, '0');
+            const month = months[parts[1]] || '01';
+            const year = parts[2];
+            return `${year}-${month}-${day}`;
+        }
+
+        return input;
     }
 }
 
