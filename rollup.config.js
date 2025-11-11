@@ -1,6 +1,7 @@
 import resolve from '@rollup/plugin-node-resolve';
 import commonjs from '@rollup/plugin-commonjs';
-import { terser } from 'rollup-plugin-terser';
+import terser from '@rollup/plugin-terser';
+import polyfillNode from 'rollup-plugin-polyfill-node';
 
 export default {
     input: 'src/index.js',
@@ -24,12 +25,10 @@ export default {
             sourcemap: true,
             exports: 'named',
             plugins: [terser()],
-            globals: {
-                'csv-parse/sync': 'csvParseSync'
-            },
         },
     ],
     plugins: [
+        polyfillNode(),
         resolve({
             browser: true,
             preferBuiltins: false,
