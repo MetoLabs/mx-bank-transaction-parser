@@ -1,5 +1,5 @@
 {
-  "name": "mx-bank-transaction-parser",
+  "name": "@metolabs/mx-bank-transaction-parser",
   "version": "0.1.0",
   "description": "JavaScript library for parsing transaction files from Mexican banks (TXT, CSV).",
   "main": "dist/index.cjs.js",
