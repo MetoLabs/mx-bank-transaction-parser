@@ -59,7 +59,7 @@ class AfirmeParser {
             .filter(line => line.length > 0);
 
         return lines
-            .map(line => this.parseLine(line))
+            .map(line => this.parseRow(line))
             .filter(Boolean);
     }
 
@@ -69,7 +69,7 @@ class AfirmeParser {
      * @param {string} line - A CSV line representing a transaction.
      * @returns {Transaction|null} Parsed Transaction or null if invalid.
      */
-    parseLine(line) {
+    parseRow(line) {
         const parts = this._splitCsvLine(line);
         if (parts.length < 7) return null;
 
@@ -136,7 +136,7 @@ class BanBajioParser {
         const dataLines = lines.slice(2);
 
         return dataLines
-            .map(line => this.parseLine(line))
+            .map(line => this.parseRow(line))
             .filter(Boolean);
     }
 
@@ -146,7 +146,7 @@ class BanBajioParser {
      * @param {string} line - CSV line string.
      * @returns {Transaction|null}
      */
-    parseLine(line) {
+    parseRow(line) {
         // Split by comma, but beware description may contain commas or pipes.
         // Let's split into exactly 8 fields by limit split:
         // Index, Date, Time, Receipt, Description, Charges, Credits, Balance
@@ -376,7 +376,7 @@ class BbvaParser {
             .filter(line => this._looksLikeTransaction(line));
 
         return lines
-            .map(line => this.parseLine(line))
+            .map(line => this.parseRow(line))
             .filter(Boolean);
     }
 
@@ -386,7 +386,7 @@ class BbvaParser {
      * @param {string} line
      * @returns {Transaction|null}
      */
-    parseLine(line) {
+    parseRow(line) {
         const regex = /^(\d{2}-\d{2}-\d{4})\s+(.+?)\s+([\d,]+\.\d{2})?\s*([\d,]+\.\d{2})?\s+([\d,]+\.\d{2})$/;
         const match = line.match(regex);
 

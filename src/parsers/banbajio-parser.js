@@ -17,17 +17,17 @@ export class BanBajioParser {
         const dataLines = lines.slice(2);
 
         return dataLines
-            .map(line => this.parseLine(line))
+            .map(line => this.parseRow(line))
             .filter(Boolean);
     }
 
     /**
      * Parses a single CSV line of BanBajio transaction.
      *
-     * @param {string} line - CSV line string.
+     * @param {string} row - CSV line string.
      * @returns {Transaction|null}
      */
-    parseLine(line) {
+    parseRow(row) {
         // Split by comma, but beware description may contain commas or pipes.
         // Let's split into exactly 8 fields by limit split:
         // Index, Date, Time, Receipt, Description, Charges, Credits, Balance
@@ -62,7 +62,7 @@ export class BanBajioParser {
             amount,
             balance,
             reference: receipt,
-            account: null, // No account in sample
+            accountNumber: null,
             description,
             bank: 'BanBajio',
             raw: line,

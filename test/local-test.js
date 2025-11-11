@@ -4,14 +4,14 @@ import { getParserForBank } from '../src/index.js';
 
 // Map of bank to file extension
 const fileTypes = {
-    scotiabank: 'txt',
     afirme: 'csv',
-    santander: 'csv',
-    hsbc: 'xlsx',
-    bbva: 'txt',
-    banorte: 'txt',
     banbajio: 'csv',
-    banregio: 'txt',
+    banorte: 'txt',
+    banregio: 'csv',
+    bbva: 'txt',
+    hsbc: 'xlsx',
+    santander: 'csv',
+    scotiabank: 'txt',
 };
 
 async function testParser() {

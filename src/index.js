@@ -1,5 +1,6 @@
 import { AfirmeParser } from './parsers/afirme-parser.js';
 import { BanBajioParser } from './parsers/banbajio-parser.js';
+import { BanregioParser } from './parsers/banregio-parser.js';
 import { BanorteParser } from './parsers/banorte-parser.js';
 import { BbvaParser } from './parsers/bbva-parser.js';
 import { ScotiabankParser } from './parsers/scotiabank-parser.js';
@@ -19,6 +20,8 @@ export function getParserForBank(bankName) {
             return new BanBajioParser();
         case 'banorte':
             return new BanorteParser();
+        case 'banregio':
+            return new BanregioParser();
         case 'bbva':
             return new BbvaParser();
         case 'scotiabank':

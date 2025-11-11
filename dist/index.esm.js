@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Represents a bank transaction.
  */
@@ -2527,5 +2525,5 @@ function getParserForBank(bankName) {
     }
 }
 
-exports.getParserForBank = getParserForBank;
-//# sourceMappingURL=index.cjs.js.map
+export { getParserForBank };
+//# sourceMappingURL=index.esm.js.map

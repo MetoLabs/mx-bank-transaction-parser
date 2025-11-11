@@ -1,40 +1,76 @@
 import { Transaction } from '../models/transaction.js';
+import * as csv from 'csv-parse/sync';
 
 export class AfirmeParser {
     /**
-     * Parses the entire CSV file content into an array of Transactions.
+     * Parses Afirme CSV content with English headers
      *
-     * @param {string} fileContent - The full CSV file content as a string.
-     * @returns {Transaction[]} Array of parsed transactions.
+     * @param {string} fileContent
+     * @returns {Transaction[]}
      */
     parse(fileContent) {
-        const lines = fileContent
-            .split(/\r?\n/)
-            .map(line => line.trim())
-            .filter(line => line.length > 0);
+        try {
+            const records = csv.parse(fileContent, {
+                delimiter: ',',
+                columns: (headers) => {
+                    return headers.map(header => this._mapHeaderToEnglish(header));
+                },
+                skip_empty_lines: true,
+                trim: true,
+                cast: (value, context) => {
+                    if (context.column === 'debit' || context.column === 'credit' || context.column === 'balance') {
+                        return this._parseNumber(value);
+                    }
+                    return value;
+                }
+            });
 
-        return lines
-            .map(line => this.parseLine(line))
-            .filter(Boolean);
+            return records
+                .map(record => this.parseRow(record))
+                .filter(Boolean);
+        } catch (error) {
+            console.error('Error parsing Afirme file:', error);
+            return [];
+        }
     }
 
     /**
-     * Parses a single CSV line into a Transaction instance.
+     * Maps Spanish headers to English
      *
-     * @param {string} line - A CSV line representing a transaction.
-     * @returns {Transaction|null} Parsed Transaction or null if invalid.
+     * @param {string} spanishHeader
+     * @returns {string}
      */
-    parseLine(line) {
-        const parts = this._splitCsvLine(line);
-        if (parts.length < 7) return null;
+    _mapHeaderToEnglish(spanishHeader) {
+        const headerMap = {
+            'Concepto': 'description',
+            'Fecha (DD/MM/AA)': 'date',
+            'Referencia': 'reference',
+            'Cargo': 'debit',
+            'Abono': 'credit',
+            'Saldo': 'balance',
+            'Cuenta': 'account',
+            'Código': 'code',
+            'No. Secuencia': 'sequence'
+        };
 
-        const description = parts[0];
-        const date = this._formatDate(parts[1]);
-        const reference = parts[2];
-        const debit = parseFloat(parts[3]) || 0;
-        const credit = parseFloat(parts[4]) || 0;
-        const balance = parseFloat(parts[5]) || 0;
-        const account = parts[6];
+        return headerMap[spanishHeader] || spanishHeader;
+    }
+
+    /**
+     * Parses a single transaction record with English headers
+     *
+     * @param {Object} record
+     * @returns {Transaction|null}
+     */
+    parseRow(record) {
+        if (!record.date || !record.description) {
+            return null;
+        }
+
+        const date = this._formatDate(record.date);
+        const debit = record.debit || 0;
+        const credit = record.credit || 0;
+        const balance = record.balance || 0;
         const amount = credit !== 0 ? credit : -debit;
 
         return new Transaction({
@@ -42,34 +78,35 @@ export class AfirmeParser {
             type: credit !== 0 ? 'credit' : 'debit',
             amount,
             balance,
-            reference,
-            account,
-            description,
-            bank: 'Afirme',
-            raw: line,
+            reference: record.reference || '',
+            accountNumber: record.account || '',
+            description: record.description.trim(),
+            bank: 'AFIRME',
+            raw: JSON.stringify(record),
         });
     }
 
     /**
-     * Converts a date string in DD/MM/YY format to ISO YYYY-MM-DD format.
+     * Parses number with commas as thousands separator
      *
-     * @param {string} input - Date string in DD/MM/YY format.
-     * @returns {string} Date string in YYYY-MM-DD format.
+     * @param {string} str
+     * @returns {number}
      */
-    _formatDate(input) {
-        const [day, month, year] = input.split('/');
-        const fullYear = Number(year) > 70 ? `19${year}` : `20${year}`;
-        return `${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    _parseNumber(str) {
+        if (!str || str.trim() === '') return 0;
+        const cleanStr = str.replace(/,/g, '').trim();
+        return parseFloat(cleanStr) || 0;
     }
 
     /**
-     * Splits a CSV line by commas into an array of fields.
-     * Does not handle quoted commas.
+     * Converts DD/MM/YYYY to YYYY-MM-DD
      *
-     * @param {string} line - A CSV line string.
-     * @returns {string[]} Array of CSV fields.
+     * @param {string} input
+     * @returns {string}
      */
-    _splitCsvLine(line) {
-        return line.split(',');
+    _formatDate(input) {
+        const [day, month, year] = input.split('/');
+        const fullYear = year.length === 2 ? `20${year}` : year;
+        return `${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
     }
 }

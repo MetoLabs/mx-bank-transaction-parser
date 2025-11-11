@@ -10,9 +10,11 @@ samples/
 *.log
 
 # Editor/IDE
-.DS_Store
 .vscode/
 .idea/
 
 # Logs
 npm-debug.log*
+
+# Misc
+.DS_Store

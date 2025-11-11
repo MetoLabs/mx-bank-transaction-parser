@@ -1,57 +1,86 @@
-import Papa from 'papaparse';
 import { Transaction } from '../models/transaction.js';
 
 export class BanorteParser {
     /**
-     * Parses the entire Banorte pipe-delimited file content into an array of Transactions.
+     * Parses Banorte CSV content with English headers
      *
-     * @param {string} fileContent - The full text content of the Banorte file.
-     * @returns {Transaction[]} Array of parsed Transaction objects.
+     * @param {string} fileContent
+     * @returns {Transaction[]}
      */
     parse(fileContent) {
-        const { data } = Papa.parse(fileContent, {
-            delimiter: '|',
-            header: true,
-            skipEmptyLines: true,
-            transformHeader: header => header.trim(),
-            transform: value => value.trim(),
-        });
+        const lines = fileContent
+            .split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(line => line && !this._isHeader(line));
 
-        return data
-            .map(record => this.parseRecord(record))
+        if (lines.length === 0) return [];
+
+        const firstLine = fileContent.split(/\r?\n/)[0].trim();
+        const spanishHeaders = firstLine.split('|').map(h => h.trim());
+        const englishHeaders = spanishHeaders.map(header => this._mapHeaderToEnglish(header));
+
+        return lines
+            .map(line => {
+                const columns = line.split('|').map(col => col.trim());
+
+                const record = {};
+                englishHeaders.forEach((header, index) => {
+                    record[header] = columns[index] || '';
+                });
+
+                return this.parseRow(record);
+            })
             .filter(Boolean);
     }
 
     /**
-     * Parses a single Banorte transaction record object into a Transaction instance.
+     * Maps Spanish headers to English
      *
-     * @param {Object} record - Parsed CSV record object with keys from header.
-     * @param {string} record.Cuenta - Account number.
-     * @param {string} record['Fecha De Operación'] - Transaction date (DD/MM/YYYY).
-     * @param {string} record.Referencia - Reference code.
-     * @param {string} record.Descripción - Description of transaction.
-     * @param {string} record.Depósitos - Deposits amount (currency formatted).
-     * @param {string} record.Retiros - Withdrawals amount (currency formatted).
-     * @param {string} record.Saldo - Balance after transaction (currency formatted).
-     * @returns {Transaction|null} Transaction instance or null if required fields missing.
+     * @param {string} spanishHeader
+     * @returns {string}
      */
-    parseRecord(record) {
-        const {
-            Cuenta: account,
-            'Fecha De Operación': dateStr,
-            Referencia: reference,
-            Descripción: description,
-            Depósitos: depositsStr,
-            Retiros: withdrawalsStr,
-            Saldo: balanceStr,
-        } = record;
+    _mapHeaderToEnglish(spanishHeader) {
+        const headerMap = {
+            'Cuenta': 'account',
+            'Fecha De Operación': 'operationDate',
+            'Fecha': 'date',
+            'Referencia': 'reference',
+            'Descripción': 'description',
+            'Cod. Transac': 'transactionCode',
+            'Sucursal': 'branch',
+            'Depósitos': 'deposits',
+            'Retiros': 'withdrawals',
+            'Saldo': 'balance',
+            'Movimiento': 'movement',
+            'Descripción Detallada': 'detailedDescription',
+            'Cheque': 'check'
+        };
 
-        if (!account || !dateStr) return null;
+        return headerMap[spanishHeader] || spanishHeader;
+    }
 
-        const date = this._formatDate(dateStr);
-        const deposits = this._parseMoney(depositsStr);
-        const withdrawals = this._parseMoney(withdrawalsStr);
-        const balance = this._parseMoney(balanceStr);
+    /**
+     * Check if line is header
+     */
+    _isHeader(line) {
+        return line.includes('Cuenta') && line.includes('Fecha') && line.includes('Descripción');
+    }
+
+    /**
+     * Parses a single transaction record with English headers
+     *
+     * @param {Object} record
+     * @returns {Transaction|null}
+     */
+    parseRow(record) {
+        if (!record.date || !record.description) {
+            return null;
+        }
+
+        const date = this._formatDate(record.date);
+        const deposits = this._parseCurrency(record.deposits);
+        const withdrawals = this._parseCurrency(record.withdrawals);
+        const balance = this._parseCurrency(record.balance);
         const amount = deposits !== 0 ? deposits : -withdrawals;
 
         return new Transaction({
@@ -59,30 +88,31 @@ export class BanorteParser {
             type: deposits !== 0 ? 'credit' : 'debit',
             amount,
             balance,
-            reference,
-            account,
-            description,
-            bank: 'Banorte',
+            reference: record.reference || '',
+            accountNumber: record.account || '',
+            description: record.description.trim(),
+            bank: 'BANORTE',
             raw: JSON.stringify(record),
         });
     }
 
     /**
-     * Parses a currency string (e.g. "$13,295.61") into a float number.
+     * Parses currency format with dollar sign and commas
      *
-     * @param {string} str - Currency formatted string.
-     * @returns {number} Parsed numeric value or 0 if invalid.
+     * @param {string} str
+     * @returns {number}
      */
-    _parseMoney(str) {
-        if (!str) return 0;
-        return parseFloat(str.replace(/[$,]/g, '')) || 0;
+    _parseCurrency(str) {
+        if (!str || str.trim() === '' || str === '$0.00') return 0;
+        const cleanStr = str.replace(/\$/g, '').replace(/,/g, '').trim();
+        return parseFloat(cleanStr) || 0;
     }
 
     /**
-     * Converts a date string from DD/MM/YYYY format to ISO YYYY-MM-DD.
+     * Converts DD/MM/YYYY to YYYY-MM-DD
      *
-     * @param {string} input - Date string in DD/MM/YYYY format.
-     * @returns {string} Reformatted date string in YYYY-MM-DD format.
+     * @param {string} input
+     * @returns {string}
      */
     _formatDate(input) {
         const [day, month, year] = input.split('/');

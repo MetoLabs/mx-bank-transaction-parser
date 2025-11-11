@@ -6,9 +6,10 @@ export default {
     input: 'src/index.js',
     output: [
         {
-            file: 'dist/index.esm.mjs',
+            file: 'dist/index.esm.js',
             format: 'esm',
             sourcemap: true,
+            exports: 'named',
         },
         {
             file: 'dist/index.cjs.js',
@@ -21,8 +22,11 @@ export default {
             format: 'umd',
             name: 'MxBankTransactionParser',
             sourcemap: true,
+            exports: 'named',
             plugins: [terser()],
-            globals: {},
+            globals: {
+                'csv-parse/sync': 'csvParseSync'
+            },
         },
     ],
     plugins: [
@@ -34,5 +38,4 @@ export default {
             include: /node_modules/,
         }),
     ],
-    external: [],
 };
