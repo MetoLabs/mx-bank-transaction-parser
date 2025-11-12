@@ -1,6 +1,6 @@
 {
   "name": "@metolabs/mx-bank-transaction-parser",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "JavaScript library for parsing transaction files from Mexican banks (TXT, CSV).",
   "main": "dist/index.cjs.js",
   "module": "dist/index.esm.js",
@@ -31,7 +31,8 @@
   "license": "MIT",
   "private": false,
   "dependencies": {
-    "csv-parse": "^6.1.0"
+    "csv-parse": "^6.1.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^28.0.6",

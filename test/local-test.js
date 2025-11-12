@@ -31,16 +31,18 @@ async function testParser() {
     const sampleFilePath = path.resolve(`./test/samples/${bankName}-sample.${ext}`);
 
     try {
-        const fileContent = await fs.readFile(sampleFilePath, 'utf-8');
+        const fileBuffer = await fs.readFile(sampleFilePath);
+
         const parser = getParserForBank(bankName);
-        const transactions = parser.parse(fileContent);
+
+        const transactions = parser.parse(fileBuffer);
 
         console.log(`Parsed ${transactions.length} transactions for ${bankName}:\n`);
         for (const [i, tx] of transactions.entries()) {
             console.log(`#${i + 1}:`, JSON.stringify(tx, null, 2));
         }
     } catch (err) {
-        console.error(`Error testing parser for "${bankName}":`, err.message);
+        console.error(`Error testing parser for "${bankName}":`, err);
     }
 }
 
