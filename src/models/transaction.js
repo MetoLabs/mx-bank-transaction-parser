@@ -16,10 +16,11 @@ export class Transaction {
      * @param {string|null} [params.accountNumber] - Origin/destination account number, if any
      * @param {string|null} [params.beneficiary] - Beneficiary of the transaction, if any
      * @param {string|null} [params.trackingKey] - Internal tracking key, if any
-     * @param {string} [params.extra] - Raw original line or extra info
+     * @param {string|null} [params.extra] - Raw original line or extra info
      */
     constructor({
                     date,
+                    hour = null,
                     type,
                     amount,
                     balance,
@@ -29,9 +30,10 @@ export class Transaction {
                     accountNumber = null,
                     beneficiary = null,
                     trackingKey = null,
-                    extra = '',
+                    extra = null,
                 }) {
         this.date = date;
+        this.hour = hour;
         this.type = type;
         this.amount = amount;
         this.balance = balance;

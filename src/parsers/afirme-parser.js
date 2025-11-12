@@ -73,14 +73,25 @@ export class AfirmeParser {
         const balance = record.balance || 0;
         const amount = credit !== 0 ? credit : -debit;
 
+        const extractedData = this._extractFromDescription(record.description);
+
+        const reference = extractedData.reference || record.reference || '';
+
+        const actualDescription = this._buildActualDescription(record.description, extractedData);
+
         return new Transaction({
             date,
             type: credit !== 0 ? 'credit' : 'debit',
             amount,
             balance,
-            reference: record.reference || '',
+            reference: reference,
             accountNumber: record.account || '',
-            description: record.description.trim(),
+            description: actualDescription,
+            beneficiary: extractedData.beneficiary || null,
+            trackingKey: extractedData.trackingKey || null,
+            hour: extractedData.hour || '',
+            rfc: extractedData.rfc || '',
+            concept: extractedData.concept || '',
             bank: {
                 id: '062',
                 code: '40062',
@@ -88,6 +99,101 @@ export class AfirmeParser {
             },
             raw: JSON.stringify(record),
         });
+    }
+
+    /**
+     * Extracts structured data from the description field
+     *
+     * @param {string} description
+     * @returns {Object}
+     */
+    _extractFromDescription(description) {
+        const result = {
+            trackingKey: null,
+            reference: null,
+            hour: null,
+            beneficiary: null,
+            rfc: null,
+            concept: null,
+            rawDescription: description
+        };
+
+        try {
+            const trackingMatch = description.match(/RASTREO\s+([A-Z0-9]+)/);
+            if (trackingMatch) {
+                result.trackingKey = trackingMatch[1];
+            }
+
+            const refMatch = description.match(/REFERENCIA:(\S+)/);
+            if (refMatch) {
+                result.reference = refMatch[1];
+            }
+
+            const hourMatch = description.match(/HORA:(\d{2}:\d{2}:\d{2})/);
+            if (hourMatch) {
+                result.hour = hourMatch[1];
+            }
+
+            const rfcMatch = description.match(/RFC\s+([A-Z&Ñ]{3,4}[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])[A-Z0-9]{2}[0-9A])/);
+            if (rfcMatch) {
+                result.rfc = rfcMatch[1];
+            }
+
+            const conceptMatch = description.match(/CONCEPTO\s+(\S+)/);
+            if (conceptMatch) {
+                result.concept = conceptMatch[1];
+            }
+
+            const beneficiaryMatch = description.match(/HORA:\d{2}:\d{2}:\d{2}\s+(.+?)(?:\s+RFC\s+[A-Z]|$)/);
+            if (beneficiaryMatch) {
+                result.beneficiary = beneficiaryMatch[1].trim();
+            }
+
+        } catch (error) {
+            console.warn('Error extracting data from description:', error);
+        }
+
+        return result;
+    }
+
+    /**
+     * Builds the actual description from extracted parts
+     *
+     * @param {string} originalDescription
+     * @param {Object} extractedData
+     * @returns {string}
+     */
+    _buildActualDescription(originalDescription, extractedData) {
+        const descriptionMatch = originalDescription.match(/HORA:\d{2}:\d{2}:\d{2}\s+(.+?)(?:\s+RFC\s+[A-Z]|$)/);
+
+        if (descriptionMatch) {
+            return descriptionMatch[1].trim();
+        }
+
+        if (extractedData.beneficiary) {
+            return extractedData.beneficiary;
+        }
+
+        return this._cleanDescription(originalDescription);
+    }
+
+    /**
+     * Cleans the description by removing technical parts
+     *
+     * @param {string} description
+     * @returns {string}
+     */
+    _cleanDescription(description) {
+        let cleanDescription = description
+            .replace(/RASTREO\s+[A-Z0-9]+\s+/, '')
+            .replace(/REFERENCIA:\S+\s+/, '')
+            .replace(/HORA:\d{2}:\d{2}:\d{2}\s+/, '')
+            .replace(/DE\s+LA\s+CTA\s+CLABE\s+\d+/, '')
+            .replace(/RFC\s+[A-Z&Ñ]{3,4}[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])[A-Z0-9]{2}[0-9A]/, '')
+            .replace(/CONCEPTO\s+\S+/, '')
+            .trim();
+
+        return cleanDescription.replace(/\s+/g, ' ').trim();
     }
 
     /**

@@ -104,14 +104,25 @@ export class BanBajioParser {
         const balance = record.balance || 0;
         const amount = credit !== 0 ? credit : -debit;
 
+        // Extract additional data from description
+        const extractedData = this._extractFromDescription(record.description);
+
+        // Use extracted reference if available, otherwise fall back to previous method
+        const reference = extractedData.reference || this._extractReference(record.description) || '';
+
         return new Transaction({
             date,
+            hour: extractedData.hour || record.time || null,
             type: credit !== 0 ? 'credit' : 'debit',
             amount,
             balance,
-            reference: this._extractReference(record.description),
+            reference: reference,
             accountNumber: accountNumber,
-            description: record.description.trim(),
+            description: extractedData.actualDescription || record.description.trim(),
+            beneficiary: extractedData.beneficiary || null,
+            trackingKey: extractedData.trackingKey || null,
+            rfc: extractedData.rfc || null,
+            concept: extractedData.concept || null,
             bank: {
                 id: '030',
                 code: '40030',
@@ -122,7 +133,103 @@ export class BanBajioParser {
     }
 
     /**
-     * Extracts reference from description
+     * Extracts structured data from the description field
+     *
+     * @param {string} description
+     * @returns {Object}
+     */
+    _extractFromDescription(description) {
+        const result = {
+            trackingKey: null,
+            reference: null,
+            hour: null,
+            beneficiary: null,
+            rfc: null,
+            concept: null,
+            actualDescription: description.trim(),
+            rawDescription: description
+        };
+
+        try {
+            // Extract tracking key
+            const trackingMatch = description.match(/Clave de Rastreo:\s*(\S+)/);
+            if (trackingMatch) {
+                result.trackingKey = trackingMatch[1].trim();
+            }
+
+            // Extract reference
+            const refMatch = description.match(/Referencia:\s*([^|]+)/);
+            if (refMatch) {
+                result.reference = refMatch[1].trim();
+            }
+
+            // Extract hour
+            const hourMatch = description.match(/Hora:\s*(\d{2}:\d{2}:\d{2})/);
+            if (hourMatch) {
+                result.hour = hourMatch[1].trim();
+            }
+
+            const rfcMatch = description.match(/RFC Ordenante:\s*([A-Z&Ñ]{3,4}[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])[A-Z0-9]{2}[0-9A])/);
+            if (rfcMatch) {
+                result.rfc = rfcMatch[1].trim();
+            }
+
+            const conceptMatch = description.match(/Concepto del Pago:\s*([^|]+)/);
+            if (conceptMatch) {
+                result.concept = conceptMatch[1].trim();
+            }
+
+
+            const beneficiaryMatch = description.match(/Ordenante:\s*([^|]+?)\s+Cuenta Ordenante:/);
+            if (beneficiaryMatch) {
+                result.beneficiary = beneficiaryMatch[1].trim();
+            }
+
+            const institutionMatch = description.match(/Institucion contraparte:\s*([^|]+?)\s+Ordenante:/);
+            if (institutionMatch) {
+                result.counterpartInstitution = institutionMatch[1].trim();
+            }
+
+            result.actualDescription = this._buildActualDescription(description, result);
+
+        } catch (error) {
+            console.warn('Error extracting data from BanBajio description:', error);
+        }
+
+        return result;
+    }
+
+    /**
+     * Builds a cleaner description from extracted parts
+     *
+     * @param {string} originalDescription
+     * @param {Object} extractedData
+     * @returns {string}
+     */
+    _buildActualDescription(originalDescription, extractedData) {
+        if (originalDescription.includes('SPEI Recibido:')) {
+            const parts = [];
+            if (extractedData.counterpartInstitution) {
+                parts.push(extractedData.counterpartInstitution);
+            }
+            if (extractedData.beneficiary) {
+                parts.push(extractedData.beneficiary);
+            }
+            if (parts.length > 0) {
+                return parts.join(' - ');
+            }
+        }
+
+        const mainDescMatch = originalDescription.match(/Descripción:\s*([^|]+)/);
+        if (mainDescMatch) {
+            return mainDescMatch[1].trim();
+        }
+
+        return originalDescription.trim();
+    }
+
+    /**
+     * Extracts reference from description (legacy method)
      *
      * @param {string} description
      * @returns {string}
