@@ -34,7 +34,8 @@ export class ScotiabankParser {
                 amount: line.substring(46, 63),
                 operationType: line.substring(63, 68),
                 balance: line.substring(68, 85),
-                description: line.substring(85),
+                description: line.substring(135, 165),
+                extra: line.substring(85),
             };
 
             if (segments.recordType !== 'CHQMXN') return null;
@@ -44,7 +45,7 @@ export class ScotiabankParser {
             const balance = this._parseNumber(segments.balance);
             const type = segments.operationType.toLowerCase().includes('abono') ? 'credit' : 'debit';
 
-            const descriptionInfo = this._parseDescription(segments.description);
+            const descriptionInfo = this._parseDescription(segments.description, line, type);
 
             return new Transaction({
                 date,
@@ -53,7 +54,11 @@ export class ScotiabankParser {
                 balance,
                 reference: segments.reference.trim(),
                 accountNumber: segments.accountNumber.trim().replace(/^0+/g, '') || null,
-                description: descriptionInfo.description,
+                description: descriptionInfo.actualDescription,
+                beneficiary: descriptionInfo.beneficiary,
+                trackingKey: descriptionInfo.trackingKey,
+                time: descriptionInfo.time,
+                concept: descriptionInfo.concept,
                 bank: {
                     id: '044',
                     code: '40044',
@@ -68,32 +73,127 @@ export class ScotiabankParser {
     }
 
     /**
-     * Parses the description field to extract meaningful information
+     * Parses the description field to extract meaningful information using fixed positions
      *
-     * @param {string} description
+     * @param {string} description - Main description from columns 135-165
+     * @param {string} fullLine - Full line for hour extraction
+     * @param {string} type
      * @returns {Object}
      */
-    _parseDescription(description) {
-        let cleanDescription = description;
-
-        if (description.includes('TRANSF. INTERBANCARIA SPEI') ||
-            description.includes('TRANSF INTERBANCARIA SPEI')) {
-
-            const mainConcept = description.split('SPEI')[1]?.split(/\s+/).slice(1, 4).join(' ').trim() || '';
-
-            const bankMatch = description.match(/SANTANDER|BBVA MEXICO|BANORTE|AFIRME|SCOTIABANK|KUSPIT/i);
-            const bank = bankMatch ? bankMatch[0] : '';
-
-            const nameMatch = description.match(/([A-Z][A-Z\s]+\/)?([A-Z][A-Z\s\/]+SA DE CV|[A-Z][A-Z\s]+\/[A-Z])/);
-            const beneficiary = nameMatch ? nameMatch[0].replace(/\//g, ' ').trim() : '';
-
-            cleanDescription = `SPEI ${bank} ${mainConcept} ${beneficiary}`.trim().replace(/\s+/g, ' ');
-        }
-
-        return {
-            description: cleanDescription,
+    _parseDescription(description, fullLine, type) {
+        const result = {
+            description: description.trim(),
+            actualDescription: description.trim(),
+            beneficiary: null,
+            trackingKey: null,
+            time: null,
+            concept: null,
             rawDescription: description
         };
+
+        try {
+            result.concept = description.trim();
+            result.actualDescription = result.concept;
+
+            if (fullLine.includes('TRANSF. INTERBANCARIA SPEI') ||
+                fullLine.includes('TRANSF INTERBANCARIA SPEI')) {
+
+                if (type === 'credit') {
+                    const extracted = this._extractSpeiReceived(fullLine);
+                    result.beneficiary = extracted.beneficiary;
+                    result.trackingKey = extracted.trackingKey;
+                    result.time = extracted.time;
+                } else {
+                    const extracted = this._extractSpeiSent(fullLine);
+                    result.beneficiary = extracted.beneficiary;
+                    result.trackingKey = extracted.trackingKey;
+                    result.time = extracted.time;
+                }
+            }
+
+        } catch (error) {
+            console.warn('Error parsing Scotiabank description:', error, description);
+        }
+
+        return result;
+    }
+
+    /**
+     * Extracts information from SPEI received transactions (credit)
+     */
+    _extractSpeiReceived(fullLine) {
+        const result = {
+            beneficiary: null,
+            trackingKey: null,
+            time: null
+        };
+
+        const timeMatch = fullLine.match(/(\d{2}:\d{2}:\d{2})/);
+        if (timeMatch) {
+            result.time = timeMatch[1];
+        }
+
+        const trackingPatterns = [
+            /(MBAN\d{20})/,
+            /(BNET\d{20})/,
+            /(8846APR[12]\d{17})/,
+            /(7875APR[12]\d{17})/,
+            /(241\d{12}\d+)/,
+            /(\d{20,30})/
+        ];
+
+        for (const pattern of trackingPatterns) {
+            const match = fullLine.match(pattern);
+            if (match) {
+                result.trackingKey = match[1];
+                break;
+            }
+        }
+
+        if (fullLine.length >= 250) {
+            const beneficiarySection = fullLine.substring(200);
+            const beneficiaryMatch = beneficiarySection.match(/([A-Z][A-Z\s\.\(\)\&]+?SA DE CV|[A-Z][A-Z\s\.\(\)\&]+?(?=\/|\d|$))/);
+            if (beneficiaryMatch) {
+                result.beneficiary = beneficiaryMatch[1].trim();
+            }
+        }
+
+        if (!result.beneficiary) {
+            const beneficiaryMatch = fullLine.match(/\/([A-Z][A-Z\s\.\(\)\&]+?)\s*(?:\/|\d{10,20}|$)/);
+            if (beneficiaryMatch) {
+                result.beneficiary = beneficiaryMatch[1].trim();
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Extracts information from SPEI sent transactions (debit)
+     */
+    _extractSpeiSent(fullLine) {
+        const result = {
+            beneficiary: null,
+            trackingKey: null,
+            time: null
+        };
+
+        const timeMatch = fullLine.match(/(\d{2}:\d{2}:\d{2})/);
+        if (timeMatch) {
+            result.time = timeMatch[1];
+        }
+
+        const beneficiaryMatch = fullLine.match(/SEL TRANSF\. INTERBANCARIA SPEI\s+[A-Z\s]+\s+([A-Z][A-Z\s]+?)\s+(?:\d+\s+\d{2}:\d{2}:\d{2}|Fecha)/);
+        if (beneficiaryMatch) {
+            result.beneficiary = beneficiaryMatch[1].trim();
+        }
+
+        const trackingMatch = fullLine.match(/\d{8}\s+(\d{8})\s+\d{2}:\d{2}:\d{2}\d{8}[A-Z0-9]+\d+/);
+        if (trackingMatch) {
+            result.trackingKey = trackingMatch[1];
+        }
+
+        return result;
     }
 
     /**

@@ -121,14 +121,20 @@ export class BanregioParser {
         const balance = record.balance || 0;
         const amount = credit !== 0 ? credit : -debit;
 
+        const extractedData = this._extractFromDescription(record.description);
+
         return new Transaction({
             date,
             type: credit !== 0 ? 'credit' : 'debit',
             amount,
             balance,
-            reference: record.reference || '',
+            reference: (record.reference || '').replace('_', ''),
             accountNumber: accountNumber,
-            description: record.description.trim(),
+            description: extractedData.actualDescription || record.description.trim(),
+            beneficiary: extractedData.establishment || null,
+            rfc: extractedData.rfc || null,
+            trackingKey: extractedData.trackingKey || null,
+            transactionDate: extractedData.transactionDate || null,
             bank: {
                 id: '058',
                 code: '40058',
@@ -136,6 +142,105 @@ export class BanregioParser {
             },
             raw: JSON.stringify(record),
         });
+    }
+
+    /**
+     * Extracts structured data from the description field
+     *
+     * @param {string} description
+     * @returns {Object}
+     */
+    _extractFromDescription(description) {
+        const result = {
+            rfc: null,
+            transactionDate: null,
+            establishment: null,
+            actualDescription: description.trim(),
+            rawDescription: description
+        };
+
+        try {
+            const pattern1 = /^([A-Z&Ñ]{3,4}\d{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])[A-Z0-9]{2}[0-9A])\s+(\d{2}\/\d{2}\/\d{4})\s+(.+)$/;
+
+            const pattern2 = /^([A-Z]{6}\d{3})\s+SPEI\.\s+([^\.]+)\.\s+([\d\s\.]+)\.\s+([^\.]+)\./;
+
+            const pattern3 = /^\((BE|NB)\)\s+(.+)$/;
+
+            const match1 = description.match(pattern1);
+            const match2 = description.match(pattern2);
+            const match3 = description.match(pattern3);
+
+            if (match1) {
+                result.rfc = match1[1].trim();
+                const dateStr = match1[4];
+                if (dateStr) {
+                    result.transactionDate = this._formatDate(dateStr);
+                }
+                result.establishment = match1[5].trim();
+                result.actualDescription = result.establishment;
+            } else if (match2) {
+                const speiCode = match2[1];
+                const bank = match2[2];
+                const account = match2[3];
+                const beneficiary = match2[4];
+
+                result.establishment = beneficiary.trim();
+                result.actualDescription = `SPEI ${bank} - ${beneficiary}`;
+
+                const trackingMatch = description.match(/(\b[A-Z0-9]{20,30}\b|\b\d{10,20}\b)/);
+                if (trackingMatch) {
+                    result.trackingKey = trackingMatch[1];
+                }
+            } else if (match3) {
+                const type = match3[1];
+                const transferDesc = match3[2];
+
+                const accountMatch = transferDesc.match(/cuenta:\s*(\d+)/i);
+                if (accountMatch) {
+                    result.accountReference = accountMatch[1];
+                }
+
+                const beneficiaryMatch = transferDesc.match(/Transferencia\s+(?:de\s+)?([^\.]+)/i);
+                if (beneficiaryMatch) {
+                    result.establishment = beneficiaryMatch[1].trim();
+                    result.actualDescription = type === 'BE' ? `Traspaso: ${result.establishment}` : `Recepción: ${result.establishment}`;
+                } else {
+                    result.establishment = transferDesc.trim();
+                    result.actualDescription = transferDesc.trim();
+                }
+            } else {
+                const rfcMatch = description.match(/([A-Z&Ñ]{3,4}\d{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])[A-Z0-9]{2}[0-9A])/);
+                if (rfcMatch) {
+                    result.rfc = rfcMatch[1].trim();
+                }
+
+                const dateMatch = description.match(/(\d{2}\/\d{2}\/\d{4})/);
+                if (dateMatch) {
+                    result.transactionDate = this._formatDate(dateMatch[1]);
+                }
+
+                if (description.includes('SPEI')) {
+                    const beneficiaryMatch = description.match(/SPEI\.\s+[^\.]+\.\s+[\d\s\.]+\.\s+([^\.]+)/);
+                    if (beneficiaryMatch) {
+                        result.establishment = beneficiaryMatch[1].trim();
+                        result.actualDescription = result.establishment;
+                    } else {
+                        const fallbackMatch = description.match(/\.\s+([^\.\d]+?)(?=\s+\d|$)/);
+                        if (fallbackMatch) {
+                            result.establishment = fallbackMatch[1].trim();
+                            result.actualDescription = result.establishment;
+                        }
+                    }
+                } else {
+                    result.establishment = description.trim();
+                }
+            }
+
+        } catch (error) {
+            console.warn('Error extracting data from Banregio description:', error, description);
+        }
+
+        return result;
     }
 
     /**
@@ -157,7 +262,13 @@ export class BanregioParser {
      * @returns {string}
      */
     _formatDate(input) {
+        if (!input || typeof input !== 'string') {
+            return input;
+        }
         const [day, month, year] = input.split('/');
+        if (!day || !month || !year) {
+            return input;
+        }
         return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
     }
 }
