@@ -4032,59 +4032,31 @@ class AfirmeParser {
 
 class BanBajioParser {
     /**
-     * Parses BanBajio CSV content with English headers
+     * Parses BanBajio CSV content with new format
      *
      * @param {string} fileContent
      * @returns {Transaction[]}
      */
     parse(fileContent) {
         try {
-            const lines = fileContent.split(/\r?\n/).map(line => line.trim());
-
-            const accountInfo = this._extractAccountInfo(lines[0]);
-            const accountNumber = accountInfo.accountNumber || '';
-
-            let dataStartIndex = -1;
-            for (let i = 0; i < lines.length; i++) {
-                if (lines[i].startsWith('#,Fecha Movimiento,Hora,Recibo,Descripción,Cargos,Abonos,Saldo')) {
-                    dataStartIndex = i + 1;
-                    break;
-                }
-            }
-
-            if (dataStartIndex === -1) {
-                console.error('Could not find transaction data in BanBajio file');
-                return [];
-            }
-
-            const transactionLines = lines.slice(dataStartIndex).filter(line => {
-                return line &&
-                    line.includes(',') &&
-                    !isNaN(parseInt(line.split(',')[0]));
-            });
-
-            const transactionData = transactionLines.join('\n');
-
-            const records = parse(transactionData, {
+            const records = parse(fileContent, {
                 delimiter: ',',
-                columns: ['sequence', 'date', 'time', 'receipt', 'description', 'debit', 'credit', 'balance'],
+                quote: '"',
                 skip_empty_lines: true,
                 trim: true,
                 relax_column_count: true,
                 cast: (value, context) => {
-                    if (context.column === 'debit' || context.column === 'credit' || context.column === 'balance') {
+                    if (context.column === 9 || context.column === 10 || context.column === 11) {
                         return this._parseNumber(value);
-                    }
-                    if (context.column === 'sequence') {
-                        return parseInt(value) || 0;
                     }
                     return value;
                 }
             });
 
             return records
-                .map(record => this.parseRow(record, accountNumber))
-                .filter(Boolean);
+                .map(record => this.parseRow(record))
+                .filter(Boolean)
+                .reverse();
         } catch (error) {
             console.error('Error parsing BanBajio file:', error);
             return [];
@@ -4092,62 +4064,35 @@ class BanBajioParser {
     }
 
     /**
-     * Extracts account information from first line
-     *
-     * @param {string} firstLine
-     * @returns {Object}
-     */
-    _extractAccountInfo(firstLine) {
-        const accountInfo = {
-            accountName: '',
-            accountNumber: '',
-            bank: 'BANBAJIO'
-        };
-
-        if (!firstLine) return accountInfo;
-
-        const parts = firstLine.split(',');
-        if (parts.length >= 2) {
-            accountInfo.accountName = parts[0]?.trim() || '';
-            accountInfo.accountNumber = parts[1]?.trim() || '';
-        }
-
-        return accountInfo;
-    }
-
-    /**
-     * Parses a single transaction record with English headers
+     * Parses a single transaction record with new format
      *
      * @param {Object} record
-     * @param {string} accountNumber
      * @returns {Transaction|null}
      */
-    parseRow(record, accountNumber) {
-        if (!record.date || !record.description) {
+    parseRow(record) {
+        if (!record[1] || !record[4]) {
             return null;
         }
 
-        const date = this._formatDate(record.date);
-        const debit = record.debit || 0;
-        const credit = record.credit || 0;
-        const balance = record.balance || 0;
+        const date = this._formatDate(record[1]);
+        const debit = this._parseNumber(record[6] || '0');
+        const credit = this._parseNumber(record[7] || '0');
+        const balance = this._parseNumber(record[8] || '0');
         const amount = credit !== 0 ? credit : -debit;
 
-        // Extract additional data from description
-        const extractedData = this._extractFromDescription(record.description);
+        const extractedData = this._extractFromDescription(record[4]);
 
-        // Use extracted reference if available, otherwise fall back to previous method
-        const reference = extractedData.reference || this._extractReference(record.description) || '';
+        const accountNumber = record[0] || '';
 
         return new Transaction({
             date,
-            time: extractedData.time || record.time || null,
+            hour: extractedData.hour || null,
             type: credit !== 0 ? 'credit' : 'debit',
             amount,
             balance,
-            reference: reference,
+            reference: extractedData.reference || record[3] || '',
             accountNumber: accountNumber,
-            description: extractedData.actualDescription || record.description.trim(),
+            description: extractedData.actualDescription || record[4].trim(),
             beneficiary: extractedData.beneficiary || null,
             trackingKey: extractedData.trackingKey || null,
             rfc: extractedData.rfc || null,
@@ -4171,7 +4116,7 @@ class BanBajioParser {
         const result = {
             trackingKey: null,
             reference: null,
-            time: null,
+            hour: null,
             beneficiary: null,
             rfc: null,
             concept: null,
@@ -4180,27 +4125,33 @@ class BanBajioParser {
         };
 
         try {
-            // Extract tracking key
-            const trackingMatch = description.match(/Clave de Rastreo:\s*(\S+)/);
-            if (trackingMatch) {
-                result.trackingKey = trackingMatch[1].trim();
+            const trackingMatch1 = description.match(/Clave de Rastreo:\s*(\S+)/);
+            const trackingMatch2 = description.match(/Clave de Rastreo:\s*([A-Z0-9]+)/);
+            if (trackingMatch1) {
+                result.trackingKey = trackingMatch1[1].trim();
+            } else if (trackingMatch2) {
+                result.trackingKey = trackingMatch2[1].trim();
             }
 
-            // Extract reference
-            const refMatch = description.match(/Referencia:\s*([^|]+)/);
-            if (refMatch) {
-                result.reference = refMatch[1].trim();
+            const refMatch1 = description.match(/Referencia:\s*([^|]+)/);
+            const refMatch2 = description.match(/Número de Referencia:\s*([^|]+)/);
+            if (refMatch1) {
+                result.reference = refMatch1[1].trim();
+            } else if (refMatch2) {
+                result.reference = refMatch2[1].trim();
             }
 
-            // Extract time
-            const timeMatch = description.match(/Hora:\s*(\d{2}:\d{2}:\d{2})/);
-            if (timeMatch) {
-                result.time = timeMatch[1].trim();
+            const hourMatch = description.match(/Hora:\s*(\d{2}:\d{2}:\d{2})/);
+            if (hourMatch) {
+                result.hour = hourMatch[1].trim();
             }
 
-            const rfcMatch = description.match(/RFC Ordenante:\s*([A-Z&Ñ]{3,4}[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])[A-Z0-9]{2}[0-9A])/);
-            if (rfcMatch) {
-                result.rfc = rfcMatch[1].trim();
+            const rfcMatch1 = description.match(/RFC Ordenante:\s*([A-Z&Ñ]{3,4}[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])[A-Z0-9]{2}[0-9A])/);
+            const rfcMatch2 = description.match(/RFC Beneficiario:\s*([^|]+)/);
+            if (rfcMatch1) {
+                result.rfc = rfcMatch1[1].trim();
+            } else if (rfcMatch2) {
+                result.rfc = rfcMatch2[1].trim();
             }
 
             const conceptMatch = description.match(/Concepto del Pago:\s*([^|]+)/);
@@ -4208,15 +4159,26 @@ class BanBajioParser {
                 result.concept = conceptMatch[1].trim();
             }
 
+            if (description.includes('SPEI Recibido:')) {
+                const beneficiaryMatch = description.match(/Ordenante:\s*([^|]+?)\s+Cuenta Ordenante:/);
+                if (beneficiaryMatch) {
+                    result.beneficiary = beneficiaryMatch[1].trim();
+                }
 
-            const beneficiaryMatch = description.match(/Ordenante:\s*([^|]+?)\s+Cuenta Ordenante:/);
-            if (beneficiaryMatch) {
-                result.beneficiary = beneficiaryMatch[1].trim();
-            }
+                const institutionMatch = description.match(/Institucion contraparte:\s*([^|]+?)\s+Ordenante:/);
+                if (institutionMatch) {
+                    result.counterpartInstitution = institutionMatch[1].trim();
+                }
+            } else if (description.includes('SPEI Enviado:')) {
+                const beneficiaryMatch = description.match(/Beneficiario:\s*([^|]+?)\s+Cuenta Beneficiario:/);
+                if (beneficiaryMatch) {
+                    result.beneficiary = beneficiaryMatch[1].trim();
+                }
 
-            const institutionMatch = description.match(/Institucion contraparte:\s*([^|]+?)\s+Ordenante:/);
-            if (institutionMatch) {
-                result.counterpartInstitution = institutionMatch[1].trim();
+                const institutionMatch = description.match(/Institucion Receptora:\s*([^|]+)/);
+                if (institutionMatch) {
+                    result.counterpartInstitution = institutionMatch[1].trim();
+                }
             }
 
             result.actualDescription = this._buildActualDescription(description, result);
@@ -4245,76 +4207,62 @@ class BanBajioParser {
                 parts.push(extractedData.beneficiary);
             }
             if (parts.length > 0) {
-                return parts.join(' - ');
+                return `SPEI Recibido: ${parts.join(' - ')}`;
             }
+            return 'SPEI Recibido';
         }
 
-        const mainDescMatch = originalDescription.match(/Descripción:\s*([^|]+)/);
-        if (mainDescMatch) {
-            return mainDescMatch[1].trim();
+        if (originalDescription.includes('SPEI Enviado:')) {
+            const parts = [];
+            if (extractedData.counterpartInstitution) {
+                parts.push(extractedData.counterpartInstitution);
+            }
+            if (extractedData.beneficiary) {
+                parts.push(extractedData.beneficiary);
+            }
+            if (parts.length > 0) {
+                return `SPEI Enviado: ${parts.join(' - ')}`;
+            }
+            return 'SPEI Enviado';
         }
 
-        return originalDescription.trim();
+        if (originalDescription.includes('Comisión') || originalDescription.includes('IVA Comisión')) {
+            const commissionMatch = originalDescription.match(/(Comisión[^|]+)/);
+            if (commissionMatch) {
+                return commissionMatch[1].trim();
+            }
+            return originalDescription.split('|')[0]?.trim() || originalDescription;
+        }
+
+        return originalDescription.split('|')[0]?.trim() || originalDescription;
     }
 
     /**
-     * Extracts reference from description (legacy method)
-     *
-     * @param {string} description
-     * @returns {string}
-     */
-    _extractReference(description) {
-        const referenceMatch = description.match(/Referencia:\s*([^|]+)/);
-        if (referenceMatch) {
-            return referenceMatch[1].trim();
-        }
-
-        const trackingMatch = description.match(/Clave de Rastreo:\s*(\S+)/);
-        if (trackingMatch) {
-            return trackingMatch[1].trim();
-        }
-
-        const receiptMatch = description.match(/Recibo #\s*(\d+)/);
-        if (receiptMatch) {
-            return receiptMatch[1].trim();
-        }
-
-        return '';
-    }
-
-    /**
-     * Parses number with commas as thousands separator
+     * Parses number with commas as thousands separator and quotes
      *
      * @param {string} str
      * @returns {number}
      */
     _parseNumber(str) {
         if (!str || str.trim() === '') return 0;
-        const cleanStr = str.replace(/,/g, '').trim();
+        const cleanStr = str.replace(/["',]/g, '').trim();
         return parseFloat(cleanStr) || 0;
     }
 
     /**
-     * Converts DD-MMM-YYYY to YYYY-MM-DD
+     * Converts DD/MM/YYYY to YYYY-MM-DD
      *
      * @param {string} input
      * @returns {string}
      */
     _formatDate(input) {
-        const months = {
-            'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
-            'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
-            'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
-        };
-
-        const parts = input.split('-');
+        const parts = input.split('/');
         if (parts.length === 3) {
             const day = parts[0].padStart(2, '0');
-            const month = months[parts[1]] || '01';
+            const month = parts[1].padStart(2, '0');
             const year = parts[2];
             return `${year}-${month}-${day}`;
         }
-
         return input;
     }
 }
@@ -4439,14 +4387,20 @@ class BanregioParser {
         const balance = record.balance || 0;
         const amount = credit !== 0 ? credit : -debit;
 
+        const extractedData = this._extractFromDescription(record.description);
+
         return new Transaction({
             date,
             type: credit !== 0 ? 'credit' : 'debit',
             amount,
             balance,
-            reference: record.reference || '',
+            reference: (record.reference || '').replace('_', ''),
             accountNumber: accountNumber,
-            description: record.description.trim(),
+            description: extractedData.actualDescription || record.description.trim(),
+            beneficiary: extractedData.establishment || null,
+            rfc: extractedData.rfc || null,
+            trackingKey: extractedData.trackingKey || null,
+            transactionDate: extractedData.transactionDate || null,
             bank: {
                 id: '058',
                 code: '40058',
@@ -4454,6 +4408,105 @@ class BanregioParser {
             },
             raw: JSON.stringify(record),
         });
+    }
+
+    /**
+     * Extracts structured data from the description field
+     *
+     * @param {string} description
+     * @returns {Object}
+     */
+    _extractFromDescription(description) {
+        const result = {
+            rfc: null,
+            transactionDate: null,
+            establishment: null,
+            actualDescription: description.trim(),
+            rawDescription: description
+        };
+
+        try {
+            const pattern1 = /^([A-Z&Ñ]{3,4}\d{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])[A-Z0-9]{2}[0-9A])\s+(\d{2}\/\d{2}\/\d{4})\s+(.+)$/;
+
+            const pattern2 = /^([A-Z]{6}\d{3})\s+SPEI\.\s+([^\.]+)\.\s+([\d\s\.]+)\.\s+([^\.]+)\./;
+
+            const pattern3 = /^\((BE|NB)\)\s+(.+)$/;
+
+            const match1 = description.match(pattern1);
+            const match2 = description.match(pattern2);
+            const match3 = description.match(pattern3);
+
+            if (match1) {
+                result.rfc = match1[1].trim();
+                const dateStr = match1[4];
+                if (dateStr) {
+                    result.transactionDate = this._formatDate(dateStr);
+                }
+                result.establishment = match1[5].trim();
+                result.actualDescription = result.establishment;
+            } else if (match2) {
+                const speiCode = match2[1];
+                const bank = match2[2];
+                const account = match2[3];
+                const beneficiary = match2[4];
+
+                result.establishment = beneficiary.trim();
+                result.actualDescription = `SPEI ${bank} - ${beneficiary}`;
+
+                const trackingMatch = description.match(/(\b[A-Z0-9]{20,30}\b|\b\d{10,20}\b)/);
+                if (trackingMatch) {
+                    result.trackingKey = trackingMatch[1];
+                }
+            } else if (match3) {
+                const type = match3[1];
+                const transferDesc = match3[2];
+
+                const accountMatch = transferDesc.match(/cuenta:\s*(\d+)/i);
+                if (accountMatch) {
+                    result.accountReference = accountMatch[1];
+                }
+
+                const beneficiaryMatch = transferDesc.match(/Transferencia\s+(?:de\s+)?([^\.]+)/i);
+                if (beneficiaryMatch) {
+                    result.establishment = beneficiaryMatch[1].trim();
+                    result.actualDescription = type === 'BE' ? `Traspaso: ${result.establishment}` : `Recepción: ${result.establishment}`;
+                } else {
+                    result.establishment = transferDesc.trim();
+                    result.actualDescription = transferDesc.trim();
+                }
+            } else {
+                const rfcMatch = description.match(/([A-Z&Ñ]{3,4}\d{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])[A-Z0-9]{2}[0-9A])/);
+                if (rfcMatch) {
+                    result.rfc = rfcMatch[1].trim();
+                }
+
+                const dateMatch = description.match(/(\d{2}\/\d{2}\/\d{4})/);
+                if (dateMatch) {
+                    result.transactionDate = this._formatDate(dateMatch[1]);
+                }
+
+                if (description.includes('SPEI')) {
+                    const beneficiaryMatch = description.match(/SPEI\.\s+[^\.]+\.\s+[\d\s\.]+\.\s+([^\.]+)/);
+                    if (beneficiaryMatch) {
+                        result.establishment = beneficiaryMatch[1].trim();
+                        result.actualDescription = result.establishment;
+                    } else {
+                        const fallbackMatch = description.match(/\.\s+([^\.\d]+?)(?=\s+\d|$)/);
+                        if (fallbackMatch) {
+                            result.establishment = fallbackMatch[1].trim();
+                            result.actualDescription = result.establishment;
+                        }
+                    }
+                } else {
+                    result.establishment = description.trim();
+                }
+            }
+
+        } catch (error) {
+            console.warn('Error extracting data from Banregio description:', error, description);
+        }
+
+        return result;
     }
 
     /**
@@ -4475,7 +4528,13 @@ class BanregioParser {
      * @returns {string}
      */
     _formatDate(input) {
+        if (!input || typeof input !== 'string') {
+            return input;
+        }
         const [day, month, year] = input.split('/');
+        if (!day || !month || !year) {
+            return input;
+        }
         return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
     }
 }
@@ -4563,6 +4622,8 @@ class BanorteParser {
         const balance = this._parseCurrency(record.balance);
         const amount = deposits !== 0 ? deposits : -withdrawals;
 
+        const extractedData = this._extractFromDetailedDescription(record.detailedDescription);
+
         return new Transaction({
             date,
             type: deposits !== 0 ? 'credit' : 'debit',
@@ -4570,7 +4631,12 @@ class BanorteParser {
             balance,
             reference: record.reference || '',
             accountNumber: record.account || '',
-            description: record.description.trim(),
+            description: extractedData.actualDescription || record.description.trim(),
+            beneficiary: extractedData.beneficiary,
+            trackingKey: extractedData.trackingKey,
+            time: extractedData.time,
+            rfc: extractedData.rfc,
+            concept: extractedData.concept,
             bank: {
                 id: '072',
                 code: '40072',
@@ -4578,6 +4644,188 @@ class BanorteParser {
             },
             raw: JSON.stringify(record),
         });
+    }
+
+    /**
+     * Extracts structured data from the detailed description field
+     *
+     * @param {string} detailedDescription
+     * @returns {Object}
+     */
+    _extractFromDetailedDescription(detailedDescription) {
+        const result = {
+            beneficiary: null,
+            trackingKey: null,
+            time: null,
+            rfc: null,
+            concept: null,
+            actualDescription: null,
+            rawDescription: detailedDescription
+        };
+
+        try {
+            if (!detailedDescription) {
+                return result;
+            }
+
+            if (detailedDescription.includes('SPEI RECIBIDO')) {
+                const extracted = this._extractSpeiReceived(detailedDescription);
+                result.beneficiary = extracted.beneficiary;
+                result.trackingKey = extracted.trackingKey;
+                result.time = extracted.time;
+                result.rfc = extracted.rfc;
+                result.concept = extracted.concept;
+                result.actualDescription = extracted.actualDescription;
+            }
+
+            else if (detailedDescription.includes('COMPRA ORDEN DE PAGO SPEI') ||
+                detailedDescription.includes('BEM SPEI')) {
+                const extracted = this._extractSpeiSent(detailedDescription);
+                result.beneficiary = extracted.beneficiary;
+                result.trackingKey = extracted.trackingKey;
+                result.time = extracted.time;
+                result.rfc = extracted.rfc;
+                result.concept = extracted.concept;
+                result.actualDescription = extracted.actualDescription;
+            }
+
+            else if (detailedDescription.includes('COMPENSACION DESFASE SPEI')) {
+                const extracted = this._extractCompensation(detailedDescription);
+                result.trackingKey = extracted.trackingKey;
+                result.actualDescription = extracted.actualDescription;
+            }
+
+        } catch (error) {
+            console.warn('Error extracting data from Banorte description:', error);
+        }
+
+        return result;
+    }
+
+    /**
+     * Extracts information from SPEI received transactions
+     *
+     * @param {string} description
+     * @returns {Object}
+     */
+    _extractSpeiReceived(description) {
+        const result = {
+            beneficiary: null,
+            trackingKey: null,
+            time: null,
+            rfc: null,
+            concept: null,
+            actualDescription: 'SPEI Recibido'
+        };
+
+        const beneficiaryMatch = description.match(/DEL CLIENTE\s+([^,]+),/);
+        if (beneficiaryMatch) {
+            result.beneficiary = beneficiaryMatch[1].trim();
+        }
+
+        const trackingMatch = description.match(/CVE RAST:\s*([^,\s]+)/);
+        if (trackingMatch) {
+            result.trackingKey = trackingMatch[1].trim();
+        }
+
+        const timeMatch = description.match(/HR LIQ:\s*(\d{2}:\d{2}:\d{2})/);
+        if (timeMatch) {
+            result.time = timeMatch[1];
+        }
+
+        const rfcMatch = description.match(/RFC\s+([A-Z&Ñ]{3,4}[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])[A-Z0-9]{2}[0-9A]),/);
+        if (rfcMatch) {
+            result.rfc = rfcMatch[1].trim();
+        }
+
+        const conceptMatch = description.match(/CONCEPTO:\s*([^,]+),/);
+        if (conceptMatch) {
+            result.concept = conceptMatch[1].trim();
+        }
+
+        const parts = [];
+        if (result.concept) parts.push(result.concept);
+        if (result.beneficiary) parts.push(result.beneficiary);
+
+        if (parts.length > 0) {
+            result.actualDescription = `SPEI Recibido: ${parts.join(' - ')}`;
+        }
+
+        return result;
+    }
+
+    /**
+     * Extracts information from SPEI sent transactions
+     *
+     * @param {string} description
+     * @returns {Object}
+     */
+    _extractSpeiSent(description) {
+        const result = {
+            beneficiary: null,
+            trackingKey: null,
+            time: null,
+            rfc: null,
+            concept: null,
+            actualDescription: 'SPEI Enviado'
+        };
+
+        const beneficiaryMatch = description.match(/BENEF:([^,\(]+)/);
+        if (beneficiaryMatch) {
+            result.beneficiary = beneficiaryMatch[1].trim();
+        }
+
+        const trackingMatch = description.match(/CVE RASTREO:\s*([^,\s]+)/);
+        if (trackingMatch) {
+            result.trackingKey = trackingMatch[1].trim();
+        }
+
+        const timeMatch = description.match(/HORA LIQ:\s*(\d{2}:\d{2}:\d{2})/);
+        if (timeMatch) {
+            result.time = timeMatch[1];
+        }
+
+        const rfcMatch = description.match(/RFC:\s*([A-Z&Ñ]{3,4}[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])[A-Z0-9]{2}[0-9A]),/);
+        if (rfcMatch) {
+            result.rfc = rfcMatch[1].trim();
+        }
+
+        const conceptMatch = description.match(/TRANSFERENCIA,?\s*([^,]+)?/);
+        if (conceptMatch && conceptMatch[1]) {
+            result.concept = conceptMatch[1].trim();
+        } else {
+            result.concept = 'Transferencia';
+        }
+
+        const parts = [];
+        if (result.concept) parts.push(result.concept);
+        if (result.beneficiary) parts.push(result.beneficiary);
+
+        if (parts.length > 0) {
+            result.actualDescription = `SPEI Enviado: ${parts.join(' - ')}`;
+        }
+
+        return result;
+    }
+
+    /**
+     * Extracts information from compensation transactions
+     *
+     * @param {string} description
+     * @returns {Object}
+     */
+    _extractCompensation(description) {
+        const result = {
+            trackingKey: null,
+            actualDescription: 'Compensación SPEI'
+        };
+
+        const trackingMatch = description.match(/RASTREO\s*:,\s*([^,\s]+)/);
+        if (trackingMatch) {
+            result.trackingKey = trackingMatch[1].trim();
+        }
+
+        return result;
     }
 
     /**
@@ -4759,7 +5007,8 @@ class ScotiabankParser {
                 amount: line.substring(46, 63),
                 operationType: line.substring(63, 68),
                 balance: line.substring(68, 85),
-                description: line.substring(85),
+                description: line.substring(135, 165),
+                extra: line.substring(85),
             };
 
             if (segments.recordType !== 'CHQMXN') return null;
@@ -4769,7 +5018,7 @@ class ScotiabankParser {
             const balance = this._parseNumber(segments.balance);
             const type = segments.operationType.toLowerCase().includes('abono') ? 'credit' : 'debit';
 
-            const descriptionInfo = this._parseDescription(segments.description);
+            const descriptionInfo = this._parseDescription(segments.description, line, type);
 
             return new Transaction({
                 date,
@@ -4778,7 +5027,11 @@ class ScotiabankParser {
                 balance,
                 reference: segments.reference.trim(),
                 accountNumber: segments.accountNumber.trim().replace(/^0+/g, '') || null,
-                description: descriptionInfo.description,
+                description: descriptionInfo.actualDescription,
+                beneficiary: descriptionInfo.beneficiary,
+                trackingKey: descriptionInfo.trackingKey,
+                time: descriptionInfo.time,
+                concept: descriptionInfo.concept,
                 bank: {
                     id: '044',
                     code: '40044',
@@ -4793,32 +5046,127 @@ class ScotiabankParser {
     }
 
     /**
-     * Parses the description field to extract meaningful information
+     * Parses the description field to extract meaningful information using fixed positions
      *
-     * @param {string} description
+     * @param {string} description - Main description from columns 135-165
+     * @param {string} fullLine - Full line for hour extraction
+     * @param {string} type
      * @returns {Object}
      */
-    _parseDescription(description) {
-        let cleanDescription = description;
-
-        if (description.includes('TRANSF. INTERBANCARIA SPEI') ||
-            description.includes('TRANSF INTERBANCARIA SPEI')) {
-
-            const mainConcept = description.split('SPEI')[1]?.split(/\s+/).slice(1, 4).join(' ').trim() || '';
-
-            const bankMatch = description.match(/SANTANDER|BBVA MEXICO|BANORTE|AFIRME|SCOTIABANK|KUSPIT/i);
-            const bank = bankMatch ? bankMatch[0] : '';
-
-            const nameMatch = description.match(/([A-Z][A-Z\s]+\/)?([A-Z][A-Z\s\/]+SA DE CV|[A-Z][A-Z\s]+\/[A-Z])/);
-            const beneficiary = nameMatch ? nameMatch[0].replace(/\//g, ' ').trim() : '';
-
-            cleanDescription = `SPEI ${bank} ${mainConcept} ${beneficiary}`.trim().replace(/\s+/g, ' ');
-        }
-
-        return {
-            description: cleanDescription,
+    _parseDescription(description, fullLine, type) {
+        const result = {
+            description: description.trim(),
+            actualDescription: description.trim(),
+            beneficiary: null,
+            trackingKey: null,
+            time: null,
+            concept: null,
             rawDescription: description
         };
+
+        try {
+            result.concept = description.trim();
+            result.actualDescription = result.concept;
+
+            if (fullLine.includes('TRANSF. INTERBANCARIA SPEI') ||
+                fullLine.includes('TRANSF INTERBANCARIA SPEI')) {
+
+                if (type === 'credit') {
+                    const extracted = this._extractSpeiReceived(fullLine);
+                    result.beneficiary = extracted.beneficiary;
+                    result.trackingKey = extracted.trackingKey;
+                    result.time = extracted.time;
+                } else {
+                    const extracted = this._extractSpeiSent(fullLine);
+                    result.beneficiary = extracted.beneficiary;
+                    result.trackingKey = extracted.trackingKey;
+                    result.time = extracted.time;
+                }
+            }
+
+        } catch (error) {
+            console.warn('Error parsing Scotiabank description:', error, description);
+        }
+
+        return result;
+    }
+
+    /**
+     * Extracts information from SPEI received transactions (credit)
+     */
+    _extractSpeiReceived(fullLine) {
+        const result = {
+            beneficiary: null,
+            trackingKey: null,
+            time: null
+        };
+
+        const timeMatch = fullLine.match(/(\d{2}:\d{2}:\d{2})/);
+        if (timeMatch) {
+            result.time = timeMatch[1];
+        }
+
+        const trackingPatterns = [
+            /(MBAN\d{20})/,
+            /(BNET\d{20})/,
+            /(8846APR[12]\d{17})/,
+            /(7875APR[12]\d{17})/,
+            /(241\d{12}\d+)/,
+            /(\d{20,30})/
+        ];
+
+        for (const pattern of trackingPatterns) {
+            const match = fullLine.match(pattern);
+            if (match) {
+                result.trackingKey = match[1];
+                break;
+            }
+        }
+
+        if (fullLine.length >= 250) {
+            const beneficiarySection = fullLine.substring(200);
+            const beneficiaryMatch = beneficiarySection.match(/([A-Z][A-Z\s\.\(\)\&]+?SA DE CV|[A-Z][A-Z\s\.\(\)\&]+?(?=\/|\d|$))/);
+            if (beneficiaryMatch) {
+                result.beneficiary = beneficiaryMatch[1].trim();
+            }
+        }
+
+        if (!result.beneficiary) {
+            const beneficiaryMatch = fullLine.match(/\/([A-Z][A-Z\s\.\(\)\&]+?)\s*(?:\/|\d{10,20}|$)/);
+            if (beneficiaryMatch) {
+                result.beneficiary = beneficiaryMatch[1].trim();
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Extracts information from SPEI sent transactions (debit)
+     */
+    _extractSpeiSent(fullLine) {
+        const result = {
+            beneficiary: null,
+            trackingKey: null,
+            time: null
+        };
+
+        const timeMatch = fullLine.match(/(\d{2}:\d{2}:\d{2})/);
+        if (timeMatch) {
+            result.time = timeMatch[1];
+        }
+
+        const beneficiaryMatch = fullLine.match(/SEL TRANSF\. INTERBANCARIA SPEI\s+[A-Z\s]+\s+([A-Z][A-Z\s]+?)\s+(?:\d+\s+\d{2}:\d{2}:\d{2}|Fecha)/);
+        if (beneficiaryMatch) {
+            result.beneficiary = beneficiaryMatch[1].trim();
+        }
+
+        const trackingMatch = fullLine.match(/\d{8}\s+(\d{8})\s+\d{2}:\d{2}:\d{2}\d{8}[A-Z0-9]+\d+/);
+        if (trackingMatch) {
+            result.trackingKey = trackingMatch[1];
+        }
+
+        return result;
     }
 
     /**

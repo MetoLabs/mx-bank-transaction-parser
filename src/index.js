@@ -3,6 +3,7 @@ import { BanBajioParser } from './parsers/banbajio-parser.js';
 import { BanregioParser } from './parsers/banregio-parser.js';
 import { BanorteParser } from './parsers/banorte-parser.js';
 import { BbvaParser } from './parsers/bbva-parser.js';
+import { SantanderParser } from './parsers/santander-parser.js';
 import { ScotiabankParser } from './parsers/scotiabank-parser.js';
 
 /**
@@ -24,6 +25,8 @@ export function getParserForBank(bankName) {
             return new BanregioParser();
         case 'bbva':
             return new BbvaParser();
+        case 'santander':
+            return new SantanderParser();
         case 'scotiabank':
             return new ScotiabankParser();
         default:
