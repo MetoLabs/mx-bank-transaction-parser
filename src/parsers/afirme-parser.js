@@ -89,7 +89,7 @@ export class AfirmeParser {
             description: actualDescription,
             beneficiary: extractedData.beneficiary || null,
             trackingKey: extractedData.trackingKey || null,
-            hour: extractedData.hour || '',
+            time: extractedData.time || '',
             rfc: extractedData.rfc || '',
             concept: extractedData.concept || '',
             bank: {
@@ -111,7 +111,7 @@ export class AfirmeParser {
         const result = {
             trackingKey: null,
             reference: null,
-            hour: null,
+            time: null,
             beneficiary: null,
             rfc: null,
             concept: null,
@@ -129,9 +129,9 @@ export class AfirmeParser {
                 result.reference = refMatch[1];
             }
 
-            const hourMatch = description.match(/HORA:(\d{2}:\d{2}:\d{2})/);
-            if (hourMatch) {
-                result.hour = hourMatch[1];
+            const timeMatch = description.match(/HORA:(\d{2}:\d{2}:\d{2})/);
+            if (timeMatch) {
+                result.time = timeMatch[1];
             }
 
             const rfcMatch = description.match(/RFC\s+([A-Z&Ñ]{3,4}[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])[A-Z0-9]{2}[0-9A])/);

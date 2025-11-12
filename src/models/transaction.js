@@ -20,7 +20,7 @@ export class Transaction {
      */
     constructor({
                     date,
-                    hour = null,
+                    time = null,
                     type,
                     amount,
                     balance,
@@ -33,7 +33,7 @@ export class Transaction {
                     extra = null,
                 }) {
         this.date = date;
-        this.hour = hour;
+        this.time = time;
         this.type = type;
         this.amount = amount;
         this.balance = balance;

@@ -112,7 +112,7 @@ export class BanBajioParser {
 
         return new Transaction({
             date,
-            hour: extractedData.hour || record.time || null,
+            time: extractedData.time || record.time || null,
             type: credit !== 0 ? 'credit' : 'debit',
             amount,
             balance,
@@ -142,7 +142,7 @@ export class BanBajioParser {
         const result = {
             trackingKey: null,
             reference: null,
-            hour: null,
+            time: null,
             beneficiary: null,
             rfc: null,
             concept: null,
@@ -163,10 +163,10 @@ export class BanBajioParser {
                 result.reference = refMatch[1].trim();
             }
 
-            // Extract hour
-            const hourMatch = description.match(/Hora:\s*(\d{2}:\d{2}:\d{2})/);
-            if (hourMatch) {
-                result.hour = hourMatch[1].trim();
+            // Extract time
+            const timeMatch = description.match(/Hora:\s*(\d{2}:\d{2}:\d{2})/);
+            if (timeMatch) {
+                result.time = timeMatch[1].trim();
             }
 
             const rfcMatch = description.match(/RFC Ordenante:\s*([A-Z&Ñ]{3,4}[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])[A-Z0-9]{2}[0-9A])/);

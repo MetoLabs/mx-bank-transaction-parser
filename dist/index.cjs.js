@@ -18,10 +18,11 @@ class Transaction {
      * @param {string|null} [params.accountNumber] - Origin/destination account number, if any
      * @param {string|null} [params.beneficiary] - Beneficiary of the transaction, if any
      * @param {string|null} [params.trackingKey] - Internal tracking key, if any
-     * @param {string} [params.extra] - Raw original line or extra info
+     * @param {string|null} [params.extra] - Raw original line or extra info
      */
     constructor({
                     date,
+                    hour = null,
                     type,
                     amount,
                     balance,
@@ -31,9 +32,10 @@ class Transaction {
                     accountNumber = null,
                     beneficiary = null,
                     trackingKey = null,
-                    extra = '',
+                    extra = null,
                 }) {
         this.date = date;
+        this.hour = hour;
         this.type = type;
         this.amount = amount;
         this.balance = balance;
@@ -3882,14 +3884,25 @@ class AfirmeParser {
         const balance = record.balance || 0;
         const amount = credit !== 0 ? credit : -debit;
 
+        const extractedData = this._extractFromDescription(record.description);
+
+        const reference = extractedData.reference || record.reference || '';
+
+        const actualDescription = this._buildActualDescription(record.description, extractedData);
+
         return new Transaction({
             date,
             type: credit !== 0 ? 'credit' : 'debit',
             amount,
             balance,
-            reference: record.reference || '',
+            reference: reference,
             accountNumber: record.account || '',
-            description: record.description.trim(),
+            description: actualDescription,
+            beneficiary: extractedData.beneficiary || null,
+            trackingKey: extractedData.trackingKey || null,
+            hour: extractedData.hour || '',
+            rfc: extractedData.rfc || '',
+            concept: extractedData.concept || '',
             bank: {
                 id: '062',
                 code: '40062',
@@ -3897,6 +3910,101 @@ class AfirmeParser {
             },
             raw: JSON.stringify(record),
         });
+    }
+
+    /**
+     * Extracts structured data from the description field
+     *
+     * @param {string} description
+     * @returns {Object}
+     */
+    _extractFromDescription(description) {
+        const result = {
+            trackingKey: null,
+            reference: null,
+            hour: null,
+            beneficiary: null,
+            rfc: null,
+            concept: null,
+            rawDescription: description
+        };
+
+        try {
+            const trackingMatch = description.match(/RASTREO\s+([A-Z0-9]+)/);
+            if (trackingMatch) {
+                result.trackingKey = trackingMatch[1];
+            }
+
+            const refMatch = description.match(/REFERENCIA:(\S+)/);
+            if (refMatch) {
+                result.reference = refMatch[1];
+            }
+
+            const hourMatch = description.match(/HORA:(\d{2}:\d{2}:\d{2})/);
+            if (hourMatch) {
+                result.hour = hourMatch[1];
+            }
+
+            const rfcMatch = description.match(/RFC\s+([A-Z&Ñ]{3,4}[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])[A-Z0-9]{2}[0-9A])/);
+            if (rfcMatch) {
+                result.rfc = rfcMatch[1];
+            }
+
+            const conceptMatch = description.match(/CONCEPTO\s+(\S+)/);
+            if (conceptMatch) {
+                result.concept = conceptMatch[1];
+            }
+
+            const beneficiaryMatch = description.match(/HORA:\d{2}:\d{2}:\d{2}\s+(.+?)(?:\s+RFC\s+[A-Z]|$)/);
+            if (beneficiaryMatch) {
+                result.beneficiary = beneficiaryMatch[1].trim();
+            }
+
+        } catch (error) {
+            console.warn('Error extracting data from description:', error);
+        }
+
+        return result;
+    }
+
+    /**
+     * Builds the actual description from extracted parts
+     *
+     * @param {string} originalDescription
+     * @param {Object} extractedData
+     * @returns {string}
+     */
+    _buildActualDescription(originalDescription, extractedData) {
+        const descriptionMatch = originalDescription.match(/HORA:\d{2}:\d{2}:\d{2}\s+(.+?)(?:\s+RFC\s+[A-Z]|$)/);
+
+        if (descriptionMatch) {
+            return descriptionMatch[1].trim();
+        }
+
+        if (extractedData.beneficiary) {
+            return extractedData.beneficiary;
+        }
+
+        return this._cleanDescription(originalDescription);
+    }
+
+    /**
+     * Cleans the description by removing technical parts
+     *
+     * @param {string} description
+     * @returns {string}
+     */
+    _cleanDescription(description) {
+        let cleanDescription = description
+            .replace(/RASTREO\s+[A-Z0-9]+\s+/, '')
+            .replace(/REFERENCIA:\S+\s+/, '')
+            .replace(/HORA:\d{2}:\d{2}:\d{2}\s+/, '')
+            .replace(/DE\s+LA\s+CTA\s+CLABE\s+\d+/, '')
+            .replace(/RFC\s+[A-Z&Ñ]{3,4}[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])[A-Z0-9]{2}[0-9A]/, '')
+            .replace(/CONCEPTO\s+\S+/, '')
+            .trim();
+
+        return cleanDescription.replace(/\s+/g, ' ').trim();
     }
 
     /**
@@ -4027,14 +4135,25 @@ class BanBajioParser {
         const balance = record.balance || 0;
         const amount = credit !== 0 ? credit : -debit;
 
+        // Extract additional data from description
+        const extractedData = this._extractFromDescription(record.description);
+
+        // Use extracted reference if available, otherwise fall back to previous method
+        const reference = extractedData.reference || this._extractReference(record.description) || '';
+
         return new Transaction({
             date,
+            hour: extractedData.hour || record.time || null,
             type: credit !== 0 ? 'credit' : 'debit',
             amount,
             balance,
-            reference: this._extractReference(record.description),
+            reference: reference,
             accountNumber: accountNumber,
-            description: record.description.trim(),
+            description: extractedData.actualDescription || record.description.trim(),
+            beneficiary: extractedData.beneficiary || null,
+            trackingKey: extractedData.trackingKey || null,
+            rfc: extractedData.rfc || null,
+            concept: extractedData.concept || null,
             bank: {
                 id: '030',
                 code: '40030',
@@ -4045,7 +4164,103 @@ class BanBajioParser {
     }
 
     /**
-     * Extracts reference from description
+     * Extracts structured data from the description field
+     *
+     * @param {string} description
+     * @returns {Object}
+     */
+    _extractFromDescription(description) {
+        const result = {
+            trackingKey: null,
+            reference: null,
+            hour: null,
+            beneficiary: null,
+            rfc: null,
+            concept: null,
+            actualDescription: description.trim(),
+            rawDescription: description
+        };
+
+        try {
+            // Extract tracking key
+            const trackingMatch = description.match(/Clave de Rastreo:\s*(\S+)/);
+            if (trackingMatch) {
+                result.trackingKey = trackingMatch[1].trim();
+            }
+
+            // Extract reference
+            const refMatch = description.match(/Referencia:\s*([^|]+)/);
+            if (refMatch) {
+                result.reference = refMatch[1].trim();
+            }
+
+            // Extract hour
+            const hourMatch = description.match(/Hora:\s*(\d{2}:\d{2}:\d{2})/);
+            if (hourMatch) {
+                result.hour = hourMatch[1].trim();
+            }
+
+            const rfcMatch = description.match(/RFC Ordenante:\s*([A-Z&Ñ]{3,4}[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])[A-Z0-9]{2}[0-9A])/);
+            if (rfcMatch) {
+                result.rfc = rfcMatch[1].trim();
+            }
+
+            const conceptMatch = description.match(/Concepto del Pago:\s*([^|]+)/);
+            if (conceptMatch) {
+                result.concept = conceptMatch[1].trim();
+            }
+
+
+            const beneficiaryMatch = description.match(/Ordenante:\s*([^|]+?)\s+Cuenta Ordenante:/);
+            if (beneficiaryMatch) {
+                result.beneficiary = beneficiaryMatch[1].trim();
+            }
+
+            const institutionMatch = description.match(/Institucion contraparte:\s*([^|]+?)\s+Ordenante:/);
+            if (institutionMatch) {
+                result.counterpartInstitution = institutionMatch[1].trim();
+            }
+
+            result.actualDescription = this._buildActualDescription(description, result);
+
+        } catch (error) {
+            console.warn('Error extracting data from BanBajio description:', error);
+        }
+
+        return result;
+    }
+
+    /**
+     * Builds a cleaner description from extracted parts
+     *
+     * @param {string} originalDescription
+     * @param {Object} extractedData
+     * @returns {string}
+     */
+    _buildActualDescription(originalDescription, extractedData) {
+        if (originalDescription.includes('SPEI Recibido:')) {
+            const parts = [];
+            if (extractedData.counterpartInstitution) {
+                parts.push(extractedData.counterpartInstitution);
+            }
+            if (extractedData.beneficiary) {
+                parts.push(extractedData.beneficiary);
+            }
+            if (parts.length > 0) {
+                return parts.join(' - ');
+            }
+        }
+
+        const mainDescMatch = originalDescription.match(/Descripción:\s*([^|]+)/);
+        if (mainDescMatch) {
+            return mainDescMatch[1].trim();
+        }
+
+        return originalDescription.trim();
+    }
+
+    /**
+     * Extracts reference from description (legacy method)
      *
      * @param {string} description
      * @returns {string}
